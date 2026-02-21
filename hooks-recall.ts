@@ -1,5 +1,5 @@
-import type { AdapterClient } from "./adapter-client.ts";
-import type { LightragConfig } from "./config.ts";
+import type { AdapterClient } from "./adapter-client";
+import type { LightragConfig } from "./config";
 
 function formatRecallContext(items: Array<{ text: string; docId?: string }>, maxResults: number): string | null {
   const dedup = new Set<string>();

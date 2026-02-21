@@ -1,8 +1,8 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { AdapterClient } from "./adapter-client.ts";
-import { lightragConfigSchema, parseConfig } from "./config.ts";
-import { buildCaptureHandler } from "./hooks-capture.ts";
-import { buildRecallHandler } from "./hooks-recall.ts";
+import { AdapterClient } from "./adapter-client";
+import { lightragConfigSchema, parseConfig } from "./config";
+import { buildCaptureHandler } from "./hooks-capture";
+import { buildRecallHandler } from "./hooks-recall";
 import {
   channelBase,
   extractText,
@@ -11,7 +11,7 @@ import {
   resolveConversationId,
   sanitizeCapturedText,
   toDateString,
-} from "./sanitize.ts";
+} from "./sanitize";
 
 const MemorySearchSchema = {
   type: "object",
@@ -95,7 +95,7 @@ const memoryPlugin = {
         label: "Memory Search",
         description: "Mandatory recall step: searches local LightRAG adapter for relevant context.",
         parameters: MemorySearchSchema,
-        async execute(_toolCallId, params) {
+        async execute(_toolCallId: string, params: unknown) {
           const { query, maxResults = 5 } = params as { query: string; maxResults?: number };
           try {
             const result = await client.query(query, maxResults);
@@ -134,7 +134,7 @@ const memoryPlugin = {
         label: "Memory Get",
         description: "Fetch full text for a memory doc from LightRAG adapter.",
         parameters: MemoryGetSchema,
-        async execute(_toolCallId, params) {
+        async execute(_toolCallId: string, params: unknown) {
           const { path } = params as { path: string };
           const docId = path.startsWith("adapter:") ? path.slice("adapter:".length) : path;
           try {
@@ -164,7 +164,7 @@ const memoryPlugin = {
         label: "Memory Inbox List",
         description: "List memory inbox review items from LightRAG adapter.",
         parameters: MemoryInboxListSchema,
-        async execute(_toolCallId, params) {
+        async execute(_toolCallId: string, params: unknown) {
           try {
             const result = await client.listInbox((params || {}) as Record<string, unknown> as {
               conversationId?: string;
@@ -198,7 +198,7 @@ const memoryPlugin = {
         label: "Memory Inbox Action",
         description: "Apply review action (approve/merge/archive) to a memory inbox item.",
         parameters: MemoryInboxActionSchema,
-        async execute(_toolCallId, params) {
+        async execute(_toolCallId: string, params: unknown) {
           try {
             const payload = params as {
               itemId: number;
@@ -232,7 +232,7 @@ const memoryPlugin = {
         label: "Memory Retrieval Feedback",
         description: "Send helpful/not-helpful feedback for retrieval results.",
         parameters: MemoryRetrievalFeedbackSchema,
-        async execute(_toolCallId, params) {
+        async execute(_toolCallId: string, params: unknown) {
           try {
             const payload = params as { queryId: number; itemId?: string; helpful: boolean; comment?: string };
             const result = await client.retrievalFeedback(payload);
@@ -262,7 +262,7 @@ const memoryPlugin = {
           cfg,
           client,
           logger: api.logger,
-          resolveConversationId: (event) => {
+          resolveConversationId: (event: Record<string, unknown>) => {
             const direct =
               (typeof event.conversationId === "string" && event.conversationId) ||
               (typeof event.channelConversationId === "string" && event.channelConversationId) ||
@@ -281,10 +281,11 @@ const memoryPlugin = {
 
     if (!cfg.autoIngest) return;
 
-    api.on("message_received", async (event, ctx) => {
+    api.on("message_received", async (event: Record<string, unknown>, ctx?: Record<string, unknown>) => {
       try {
-        const channel = channelBase(ctx.channelId);
-        const conversationId = resolveConversationId(ctx, event.from);
+        const channel = channelBase(String(ctx?.channelId || "unknown"));
+        const fallbackFrom = typeof event.from === 'string' ? event.from : undefined;
+        const conversationId = resolveConversationId(ctx || {}, fallbackFrom);
         const canonical = normalizeConversationId(channel, conversationId);
         lastConversationByChannel.set(channel, canonical);
 
@@ -294,14 +295,14 @@ const memoryPlugin = {
         await client.ingest({
           conversationId: canonical,
           channel,
-          date: toDateString(event.timestamp ? normalizeTimestamp(event.timestamp) : undefined),
+          date: toDateString(typeof event.timestamp === 'number' ? normalizeTimestamp(event.timestamp) : undefined),
           items: [
             {
               role: "user",
               content: text,
-              ts: event.timestamp ? new Date(normalizeTimestamp(event.timestamp)).toISOString() : undefined,
-              sender: event.from,
-              messageId: typeof event.metadata?.messageId === "string" ? event.metadata.messageId : undefined,
+              ts: typeof event.timestamp === 'number' ? new Date(normalizeTimestamp(event.timestamp)).toISOString() : undefined,
+              sender: fallbackFrom,
+              messageId: (event.metadata && typeof event.metadata === 'object' && event.metadata !== null && 'messageId' in event.metadata && typeof event.metadata.messageId === 'string') ? event.metadata.messageId : undefined,
             },
           ],
         });

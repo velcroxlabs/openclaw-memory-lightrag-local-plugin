@@ -1,5 +1,5 @@
-import type { AdapterClient } from "./adapter-client.ts";
-import type { LightragConfig } from "./config.ts";
+import type { AdapterClient } from "./adapter-client";
+import type { LightragConfig } from "./config";
 import {
   channelBase,
   clipText,
@@ -7,7 +7,7 @@ import {
   normalizeConversationId,
   sanitizeCapturedText,
   toDateString,
-} from "./sanitize.ts";
+} from "./sanitize";
 
 type MessageLike = {
   role?: string;
@@ -57,13 +57,13 @@ export function buildCaptureHandler(params: {
   const { api, cfg, client, lastConversationByChannel } = params;
   const lastAssistantSigByConversation = new Map<string, string>();
 
-  return async (event: Record<string, unknown>, ctx: Record<string, unknown>) => {
+  return async (event: Record<string, unknown>, ctx?: Record<string, unknown>) => {
     if (!event.success || !Array.isArray(event.messages) || event.messages.length === 0) {
       if (cfg.debug) api.logger.debug("memory-lightrag-local: capture skip (invalid/empty event)");
       return;
     }
 
-    const provider = channelBase(String(ctx.messageProvider || ctx.channelId || "unknown"));
+    const provider = channelBase(String(ctx?.messageProvider || ctx?.channelId || "unknown"));
     const canonicalConversation =
       lastConversationByChannel.get(provider) || `${provider}:unknown`;
     const conversationId = normalizeConversationId(provider, canonicalConversation);

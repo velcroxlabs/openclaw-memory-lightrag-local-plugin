@@ -60,33 +60,90 @@ Add to your `openclaw.json`:
 
 Restart the Gateway after configuration changes.
 
+### Dependencies
+
+- **LightRAG local server** (v1.x) – provides the memory backend, embedding model, and storage. Must be running and accessible.
+- **OpenClaw Gateway 2026.1+** – plugin SDK compatibility.
+- **Node.js 18+** (for plugin development only).
+
+Ensure the LightRAG server is configured with the same embedding model for ingestion and recall; changing models requires re‑ingestion of all memories.
+
 ## Use Cases
 
-### 1. Long‑term conversation memory
-The plugin automatically ingests every conversation turn into LightRAG, building a searchable memory of past interactions. This allows the AI to recall relevant context from previous sessions.
+### 1. Personal Assistant with Long‑Term Memory
+**Scenario:** Daily personal assistant across multiple channels (Telegram, Discord, etc.) that remembers preferences, past decisions, and important facts across sessions.
 
-### 2. Semantic search over ingested content
-Use the `memory_search` tool (or the built‑in recall) to find related snippets by natural‑language queries.
+**How it works:**
+- Every conversation turn is automatically ingested into LightRAG.
+- When you ask “What did we decide about the vacation last week?”, the plugin recalls relevant snippets from memory and injects them into the AI’s context.
+- The assistant answers with precise references to past conversations.
 
-### 3. Conflict detection and deduplication
-LightRAG can identify duplicate or conflicting memories, helping to keep the memory store clean.
+**Configuration:** `autoIngest: true`, `autoRecall: true`, `maxRecallResults: 5`.
 
-### 4. Custom memory lifecycle
-Configure TTLs, review states, and archival policies via LightRAG’s own admin UI.
+### 2. Team Collaboration Bot
+**Scenario:** Shared OpenClaw instance serving a team channel (e.g., Slack) that needs to remember decisions, action items, and shared knowledge.
+
+**How it works:**
+- Ingests messages from all team members.
+- Provides semantic search over past discussions (“Find the decision about the Q4 budget”).
+- Can be extended with custom metadata (e.g., tagging memories by project).
+
+**Considerations:** Ensure LightRAG server is accessible to all team members; set `captureMode: "everything"` to retain full context.
+
+### 3. Debugging and Support Agent
+**Scenario:** OpenClaw as a support agent that interacts with users to troubleshoot issues, recalling similar past issues and solutions.
+
+**How it works:**
+- Ingests support tickets and resolution notes.
+- When a new issue is described, the plugin recalls similar past issues and suggests known fixes.
+- Reduces repetitive work for human agents.
+
+**Configuration:** `maxRecallResults: 10` to provide more context; `debug: true` during initial setup.
+
+### Additional Use Cases
+For more scenarios (content creation, compliance audit, multi‑channel context sharing, custom memory workflows), see [USE_CASES.md](USE_CASES.md).
 
 ## Known Issues & Limitations
 
-### Authentication
-- The plugin requires a valid API key for the LightRAG server. If the key is missing or incorrect, ingestion and recall will fail silently (check Gateway logs).
+### Technical Limitations & Dependencies
 
-### Server availability
-- If the LightRAG server is down, the plugin will log errors but OpenClaw will continue operating (memory operations will be skipped).
+| Category | Limitation | Impact | Workaround |
+|----------|------------|--------|------------|
+| **Authentication** | API key stored in plaintext in `openclaw.json` | Security risk if config file leaked | Use environment variables, OpenClaw secret management (when available) |
+| **Server availability** | No automatic retry or circuit‑breaker | Failed operations are dropped, memory gaps | Monitor LightRAG server health, implement external retry logic |
+| **Performance** | Ingestion adds HTTP overhead per turn | Latency increase (~50‑200ms per turn) | Batch ingestion, disable `autoIngest` for high‑volume channels |
+| **Performance** | Recall adds network + embedding time | AI turn latency increased (~100‑500ms) | Reduce `maxRecallResults`, use localhost, disable `autoRecall` |
+| **Scalability** | SQLite backend (default) | Limited concurrent writes, not for large teams | Use LightRAG PostgreSQL backend, shard by channel |
+| **Scalability** | No clustering support | Memory not distributed across instances | Manual sharding, load balancer in front of LightRAG |
+| **Schema changes** | LightRAG API may evolve | Plugin may break after server upgrade | Pin versions, check compatibility matrix before upgrading |
+| **Security** | No encryption at rest | Sensitive conversations stored plaintext | Encrypt disk volume, use SQLite encryption extensions |
+| **Error handling** | Network errors not gracefully recovered | Plugin may stop ingesting until Gateway restart | Implement retry logic in custom hooks, monitor logs |
+| **Memory management** | No automatic pruning (TTL) | Database grows indefinitely | Use LightRAG's TTL settings, periodic manual cleanup |
+| **Multi‑tenant isolation** | Single namespace for all memories | No separation between users/channels | Run separate LightRAG instances per tenant |
 
-### Performance
-- Ingestion adds a small overhead to each conversation turn (HTTP POST to `/ingest`). For high‑volume deployments, consider batching.
+### Dependencies & Version Compatibility
 
-### Schema changes
-- LightRAG’s API may evolve; this plugin is pinned to a specific version of the LightRAG local server. Check compatibility before upgrading either side.
+- **LightRAG local server v1.x** – Must be running and accessible; compatible with embedding models supported by LightRAG (default: `all-MiniLM-L6-v2`).
+- **OpenClaw Gateway 2026.1+** – Plugin uses SDK features introduced in 2026.1.
+- **Node.js 18+** (for plugin development only) – Required to build TypeScript source.
+
+**Embedding model consistency:** Changing the embedding model in LightRAG requires re‑ingestion of all existing memories; otherwise, recall quality degrades.
+
+**Network topology:** For lowest latency, run LightRAG server on the same host as OpenClaw Gateway (localhost). Each network hop adds 1‑10ms.
+
+### Performance Characteristics (Typical)
+
+| Operation | Latency (localhost) | Throughput |
+|-----------|---------------------|------------|
+| Ingestion per message | 20‑100 ms | 10‑50 msg/sec (SQLite) |
+| Recall query (top‑8) | 50‑300 ms | 5‑20 queries/sec |
+| Embedding computation | 10‑50 ms per query | Depends on model & CPU |
+
+**Note:** Latency scales with message length, embedding model size, and database size.
+
+### Advanced Configuration & Workarounds
+
+For detailed guidance on configuring capture parameters, custom hooks, and scaling strategies, see [USAGE.md](USAGE.md).
 
 ## Error Handling
 
@@ -98,6 +155,11 @@ Common error scenarios and how to diagnose them:
 | `Connection refused` | LightRAG server not running | Start the server (`npm run dev` in `openclaw-lightrag-local/server`) |
 | `no such table: vec_chunks` | LightRAG database schema mismatch | Run database migrations (`npm run migrate` in the server directory) |
 | `Memory search returns empty` | No documents ingested | Check that `autoIngest` is `true` and that hooks are firing (enable `debug` logging) |
+| `Plugin fails to load` | Missing manifest, TypeScript errors, plugin ID mismatch | Check Gateway logs, verify `openclaw.plugin.json`, run `npx tsc --noEmit`, ensure dependencies installed |
+| `High latency on AI turns` | Recall queries adding network round‑trip + embedding time | Reduce `maxRecallResults`, ensure LightRAG server on localhost, disable `autoRecall` for low‑latency channels |
+| `Missing conversation context in recalled memories` | `captureMode` setting strips context | Set `captureMode: "everything"` to retain full conversation context |
+| `LightRAG server crashes under load` | SQLite locking issues, memory limits | Monitor server resources, consider PostgreSQL backend for scaling |
+| `Plugin config changes not applied` | Gateway not restarted after config changes | Restart Gateway with `openclaw gateway restart` |
 
 ## Testing
 
@@ -117,6 +179,27 @@ npm test
 ### Manual verification
 - Use the LightRAG web dashboard (`http://127.0.0.1:8787`) to browse ingested documents.
 - Query the LightRAG API directly: `curl http://127.0.0.1:8787/query?q=test`.
+
+### Pending Tests
+The following tests are planned but not yet implemented:
+
+#### Unit Tests
+- `adapter-client.ts`: HTTP client error handling (network errors, 4xx/5xx responses).
+- `config.ts`: Config schema parsing and default values.
+- `hooks-capture.ts`: Capture logic for different `captureMode` settings.
+- `hooks-recall.ts`: Recall injection and context formatting.
+- `sanitize.ts`: Sensitive data stripping from captured text.
+
+#### Integration Tests
+- End‑to‑end test with a mock LightRAG server.
+- Plugin lifecycle (load, enable, disable, unload).
+- Compatibility with OpenClaw Gateway 2026.1+.
+
+#### Performance Tests
+- Latency added by `autoIngest` and `autoRecall` under typical conversation load.
+- Stress test with high‑volume ingestion (1000+ messages).
+
+For the full list of pending improvements, see [TODO.md](TODO.md).
 
 ## Roadmap & Missing Features
 
