@@ -1,0 +1,114 @@
+import type { AdapterClient } from "./adapter-client.ts";
+import type { LightragConfig } from "./config.ts";
+import {
+  channelBase,
+  clipText,
+  extractText,
+  normalizeConversationId,
+  sanitizeCapturedText,
+  toDateString,
+} from "./sanitize.ts";
+
+type MessageLike = {
+  role?: string;
+  content?: unknown;
+  text?: string;
+  output_text?: string;
+  output?: unknown;
+};
+
+function getLastTurn(messages: unknown[]): unknown[] {
+  let lastUserIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as { role?: string };
+    if (String(msg?.role || "").toLowerCase() === "user") {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  return lastUserIdx >= 0 ? messages.slice(lastUserIdx) : messages;
+}
+
+function extractTurnTexts(lastTurn: unknown[], captureMode: "all" | "everything"): Array<{ role: "user" | "assistant"; text: string }> {
+  const out: Array<{ role: "user" | "assistant"; text: string }> = [];
+
+  for (const msg of lastTurn) {
+    if (!msg || typeof msg !== "object") continue;
+    const m = msg as MessageLike;
+    const role = String(m.role || "").toLowerCase();
+    if (role !== "user" && role !== "assistant") continue;
+
+    const raw = extractText(m.content ?? m.text ?? m.output_text ?? m.output ?? "");
+    const text = sanitizeCapturedText(raw, captureMode);
+    if (!text) continue;
+
+    out.push({ role: role as "user" | "assistant", text });
+  }
+
+  return out;
+}
+
+export function buildCaptureHandler(params: {
+  api: { logger: { debug(msg: string): void; warn(msg: string): void } };
+  cfg: LightragConfig;
+  client: AdapterClient;
+  lastConversationByChannel: Map<string, string>;
+}) {
+  const { api, cfg, client, lastConversationByChannel } = params;
+  const lastAssistantSigByConversation = new Map<string, string>();
+
+  return async (event: Record<string, unknown>, ctx: Record<string, unknown>) => {
+    if (!event.success || !Array.isArray(event.messages) || event.messages.length === 0) {
+      if (cfg.debug) api.logger.debug("memory-lightrag-local: capture skip (invalid/empty event)");
+      return;
+    }
+
+    const provider = channelBase(String(ctx.messageProvider || ctx.channelId || "unknown"));
+    const canonicalConversation =
+      lastConversationByChannel.get(provider) || `${provider}:unknown`;
+    const conversationId = normalizeConversationId(provider, canonicalConversation);
+
+    const lastTurn = getLastTurn(event.messages);
+    const texts = extractTurnTexts(lastTurn, cfg.captureMode)
+      .map((t) => ({ ...t, text: clipText(t.text) }))
+      .filter((t) => t.text.length >= cfg.minCaptureLength);
+
+    if (texts.length === 0) {
+      if (cfg.debug) api.logger.debug("memory-lightrag-local: capture skip (no eligible text)");
+      return;
+    }
+
+    const assistant = [...texts].reverse().find((x) => x.role === "assistant");
+    if (!assistant) {
+      if (cfg.debug) api.logger.debug("memory-lightrag-local: capture skip (no assistant output in last turn)");
+      return;
+    }
+
+    const sig = `${conversationId}|assistant|${assistant.text}`;
+    if (lastAssistantSigByConversation.get(conversationId) === sig) {
+      if (cfg.debug) api.logger.debug("memory-lightrag-local: capture dedupe skip");
+      return;
+    }
+    lastAssistantSigByConversation.set(conversationId, sig);
+
+    try {
+      await client.ingest({
+        conversationId,
+        channel: provider,
+        date: toDateString(),
+        items: texts.map((t) => ({
+          role: t.role,
+          content: t.text,
+          ts: new Date().toISOString(),
+          sender: t.role === "assistant" ? "assistant" : undefined,
+        })),
+      });
+
+      api.logger.warn(
+        `memory-lightrag-local: capture ok conv=${conversationId} provider=${provider} items=${texts.length}`,
+      );
+    } catch (err) {
+      api.logger.warn(`memory-lightrag-local: capture failed: ${String(err)}`);
+    }
+  };
+}

@@ -1,0 +1,60 @@
+{
+  "id": "memory-lightrag-local",
+  "kind": "memory",
+  "uiHints": {
+    "baseUrl": {
+      "label": "LightRAG API Base URL",
+      "placeholder": "http://127.0.0.1:8787"
+    },
+    "apiKey": {
+      "label": "API Key",
+      "sensitive": true,
+      "placeholder": "..."
+    },
+    "autoIngest": {
+      "label": "Auto-Ingest",
+      "help": "Capture conversation content from hooks and ingest into adapter"
+    },
+    "autoRecall": {
+      "label": "Auto-Recall",
+      "help": "Inject relevant memories before each AI turn"
+    },
+    "maxRecallResults": {
+      "label": "Max Recall Results",
+      "placeholder": "8",
+      "help": "Maximum memory snippets injected per turn",
+      "advanced": true
+    },
+    "captureMode": {
+      "label": "Capture Mode",
+      "help": "all (default): remove injected context blocks. everything: ingest as-is",
+      "advanced": true
+    },
+    "minCaptureLength": {
+      "label": "Min Capture Length",
+      "placeholder": "10",
+      "help": "Skip captured text shorter than this",
+      "advanced": true
+    },
+    "debug": {
+      "label": "Debug Logging",
+      "help": "Enable verbose plugin diagnostics",
+      "advanced": true
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": { "type": "string" },
+      "apiKey": { "type": "string" },
+      "autoIngest": { "type": "boolean" },
+      "autoRecall": { "type": "boolean" },
+      "maxRecallResults": { "type": "number", "minimum": 1, "maximum": 20 },
+      "captureMode": { "type": "string", "enum": ["all", "everything"] },
+      "minCaptureLength": { "type": "number", "minimum": 1, "maximum": 200 },
+      "debug": { "type": "boolean" }
+    },
+    "required": []
+  }
+}
