@@ -1,5 +1,5 @@
-import type { AdapterClient } from "./adapter-client";
-import type { LightragConfig } from "./config";
+import type { AdapterClient } from "../core/adapter-client";
+import type { LightragConfig } from "../core/config";
 import {
   channelBase,
   clipText,
@@ -7,7 +7,7 @@ import {
   normalizeConversationId,
   sanitizeCapturedText,
   toDateString,
-} from "./sanitize";
+} from "../core/sanitize";
 
 type MessageLike = {
   role?: string;

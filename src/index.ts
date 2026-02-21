@@ -1,8 +1,8 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { AdapterClient } from "./adapter-client";
-import { lightragConfigSchema, parseConfig } from "./config";
-import { buildCaptureHandler } from "./hooks-capture";
-import { buildRecallHandler } from "./hooks-recall";
+import { AdapterClient } from "./core/adapter-client";
+import { lightragConfigSchema, parseConfig } from "./core/config";
+import { buildCaptureHandler } from "./hooks/capture";
+import { buildRecallHandler } from "./hooks/recall";
 import {
   channelBase,
   extractText,
@@ -11,7 +11,7 @@ import {
   resolveConversationId,
   sanitizeCapturedText,
   toDateString,
-} from "./sanitize";
+} from "./core/sanitize";
 
 const MemorySearchSchema = {
   type: "object",
